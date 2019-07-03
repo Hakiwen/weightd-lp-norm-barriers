@@ -1,0 +1,13 @@
+<launch>
+    <env name="GAZEBO_RESOURCE_PATH" value="$(find weighted_lp_norm_barriers)/gazebo" />
+    <include file="$(find weighted_lp_norm_barriers)/launch/unicycle_world.launch">
+        <env name="GAZEBO_RESOURCE_PATH" value="S(find weighted_lp_norm_barriers)/gazebo" />
+    </include>
+
+    <node type="unicycle_gazebo_interface" name="unicycle_gazebo_interface" pkg="weighted_lp_norm_barriers"/>
+
+    <node type="unicycle_dynamics_integrator" name="unicycle_dynamics_integrator" pkg="weighted_lp_norm_barriers"/>
+
+<!--    <node type="unicycle_controller" name="unicycle_controller" pkg="weighted_lp_norm_barriers" />-->
+
+</launch>

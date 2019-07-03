@@ -1,0 +1,6 @@
+#! /usr/bin/env python
+import unicycle_dynamics_integrator
+
+
+udi = unicycle_dynamics_integrator.UnicycleDynamicsIntegrator()
+udi.loop()

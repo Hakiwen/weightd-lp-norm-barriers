@@ -1,0 +1,6 @@
+#! /usr/bin/env python
+import unicycle_gazebo_interface
+
+
+ugi = unicycle_gazebo_interface.UnicycleGazeboInterface()
+ugi.loop()
