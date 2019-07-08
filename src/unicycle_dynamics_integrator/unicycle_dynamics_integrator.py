@@ -29,4 +29,3 @@ class UnicycleDynamicsIntegrator:
         while not rospy.is_shutdown():
             rospy.spin()
             self.integrate()
-            rate.sleep()
