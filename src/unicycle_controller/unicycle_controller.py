@@ -7,7 +7,6 @@ from std_msgs.msg import Float32MultiArray
 
 global mu, kappa, sigma_1, sigma_2, sigma_3, l, c, p, theta_0, phi_term, mu1, mu2, rho, gamma, large, delta, mu_hat_max, epsilon_1, epsilon_2
 
-mu_hat_max = delta*pow(sigma_3,p)/pow(2*pi, p)
 
 def R_gamma(x_bar):
     x = x_bar[0]
@@ -35,13 +34,13 @@ def alpha(X):
     x_bar = X[0:1]
     phi = X[2]
     alpha_terms = np.zeros(3)
-    alpha_terms[0] = pow(((R_gamma(x_bar) - c)/sigma_2),p)
-    alpha_terms[1] = pow(((theta_gamma(x_bar) - theta_0)/sigma_1),p)
-    alpha_terms[2] = mu*pow((abs(kappa)*(phi - phi_term)/sigma_3),p)
+    alpha_terms[0] = mu1*pow(((R_gamma(x_bar) - c)/sigma_2),p)
+    alpha_terms[1] = mu1*pow(((theta_gamma(x_bar) - theta_0)/sigma_1),p)
+    alpha_terms[2] = mu2*pow((abs(kappa)*(phi - phi_term)/sigma_3),p)
     return alpha_terms.sum()
 
 def psi(phi):
-    return mu*kappa*pow(phi - phi_term,p - 1)/pow(sigma_3,p)
+    return mu2*kappa*pow(phi - phi_term,p - 1)/pow(sigma_3,p)
 
 def omega(x_bar):
     omega_terms = np.zeros(2)
@@ -100,6 +99,67 @@ def grad_upsilon(X):
     angle_term = kappa*mu2*pow(kappa*(phi - phi_term)/sigma_3, p - 1)/sigma_3
     return scalar_term*np.concatenate((np.matmul(a,b), angle_term), axis=1)
 
+
+def checkDonut(x, y, epsilon):
+    R = R_gamma([x, y])
+    theta = theta_gamma([x,y])
+
+    alpha = abs(R - c)/sigma_2
+    beta = abs(theta - theta_0)/sigma_1
+
+    Hg = abs(kappa) - np.linalg.norm([alpha, beta], p)
+    H_eps = np.linalg.norm([alpha, beta], p) - abs(kappa) - epsilon
+
+    if Hg >= 0 and H_eps >= 0:
+        d = 0
+    else:
+        d = 1
+    return d
+
+# may not be epsilon_1
+def min_norm_grad_omega():
+    theta_k = 2*pi/3
+    epsilon = epsilon_1
+    t_mu = (kappa + epsilon)/kappa
+    x_Lp = np.linspace(-t_mu*sigma_1, t_mu*sigma_1, 100)
+    y_Lp = np.linspace(-t_mu*sigma_2, t_mu*sigma_2, 100)
+    x, y = np.meshgrid(x_Lp, y_Lp, sparse=False, indexing='ij')
+    R_k = 1/abs(kappa)
+    alpha_b = np.sign(kappa)
+
+    Bx = np.multiply((R_k + y), np.cos(alpha_b*pi/2 + theta_k/2*x/sigma_1))
+    By = np.multiply((R_k + y), np.sin(alpha_b*pi/2 + theta_k/2*x/sigma_1)) - alpha_b*R_k
+
+    Dx = []
+    Dy = []
+    m = 1
+    for i in range(Bx.shape[0]):
+        for j in range(Bx.shape[0]):
+            donut = checkDonut(Bx(i,j), By(i,j), epsilon)
+            if donut == 1:
+                Dx.append(Bx(i,j))
+                Dy.append(By(i,j))
+                m += 1
+
+    D = np.concatenate((Dx.T, Dy.T), axis=1)
+    G = np.zeros(len(Dx), 2)
+    Norm_Grad = []
+    omega_vals = []
+    for i in range(len(Dx)):
+        x_new_B = kappa*Dx[i]
+        y_new_B = kappa*Dy[i]
+        R_B = sqrt(pow(x_new_B, 2) + np.power(y_new_B, 2))
+        theta_B = atan2(y_new_B, x_new_B)
+        Lp_weight_B_p_1 = pow(pow(R_B - c, p)/pow(sigma_2, p) + pow(theta_B - theta_0, p)/pow(sigma_1, p), 1/p - 1)
+
+        V_v = Lp_weight_B_p_1*p*[[pow(R_B - c, p - 1)/pow(sigma_2, p)], [-pow(theta_B - theta_0, p-1)/pow(sigma_1, p)]]
+        Q_inv = [[cos(theta_B), sin(theta_B)], [(1/R_B)*sin(theta_B), -(1/R_B)*cos(theta_B)]]
+        G[i, :] = np.matmul(V_v.T, Q_inv)
+        Norm_Grad.append(np.linalg.norm(G[i, :]))
+        omega_vals.append(omega([x_new_B, y_new_B]))
+
+    return min(Norm_Grad), min(omega_vals)
+
 # r here is actually r~
 def qp_contraint_rs(r):
     ups = upsilon(r)
@@ -123,6 +183,11 @@ def r2x(r):
     X[2] = r[2]
     return X
 
+min_grad, min_omega = min_norm_grad_omega()
+
+mu_hat_max = delta*pow(sigma_3,p)/pow(2*pi, p)
+
+mu_star = min_grad*l*pow(sigma_3, p)*pow(min_omega, p - 1)/(pow(abs(kappa), p)*pow(2*pi, p - 1))
 
 class UnicycleDynamicsIntegrator:
     def __init__(self):
