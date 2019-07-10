@@ -5,246 +5,275 @@ from math import pow, sqrt, cos, sin, atan2, pi
 
 from std_msgs.msg import Float32MultiArray
 
-global mu, kappa, sigma_1, sigma_2, sigma_3, l, c, p, theta_0, phi_term, mu1, mu2, rho, gamma, large, delta, mu_hat_max, epsilon_1, epsilon_2
 
+class UnicycleController:
 
-def R_gamma(x_bar):
-    x = x_bar[0]
-    y = x_bar[1]
-    return sqrt(pow(kappa*x,2) + pow(kappa*y + 1,2))
-
-def grad_R_gamma(x_bar):
-    divisor = sqrt(pow(kappa*x_bar[0],2) + pow(kappa*x_bar[1] + 1,2))
-    x_term = pow(kappa,2)*x_bar[0]/divisor
-    y_term = 2*kappa*(kappa*x_bar[1] + 1)/divisor
-    return [x_term, y_term]
-
-def theta_gamma(x_bar):
-    x = x_bar[0]
-    y = x_bar[1]
-    return atan2(kappa*y + 1, x)
-
-def grad_theta_gamma(x_bar):
-    divisor = pow(kappa*x_bar[0],2) + pow(kappa*x_bar[1] + 1, 2)
-    x_term = -kappa*(kappa*x_bar[1] + 1)/divisor
-    y_term = pow(kappa,2)*x_bar[0]/divisor
-    return [x_term, y_term]
-
-def alpha(X):
-    x_bar = X[0:1]
-    phi = X[2]
-    alpha_terms = np.zeros(3)
-    alpha_terms[0] = mu1*pow(((R_gamma(x_bar) - c)/sigma_2),p)
-    alpha_terms[1] = mu1*pow(((theta_gamma(x_bar) - theta_0)/sigma_1),p)
-    alpha_terms[2] = mu2*pow((abs(kappa)*(phi - phi_term)/sigma_3),p)
-    return alpha_terms.sum()
-
-def psi(phi):
-    return mu2*kappa*pow(phi - phi_term,p - 1)/pow(sigma_3,p)
-
-def omega(x_bar):
-    omega_terms = np.zeros(2)
-    omega_terms[0] = pow(abs(R_gamma(x_bar) - 1)/sigma_2, p)
-    omega_terms[1] = pow(abs(theta_gamma(x_bar) - theta_0)/sigma_1, p)
-    return pow(omega_terms.sum(), 1/p)
-
-def grad_omega(x_bar):
-    R = R_gamma(x_bar)
-    theta = theta_gamma(x_bar)
-    scalar_term = pow(pow(1/sigma_2, p)*pow(abs(R - 1), p) + pow(1/sigma_1, p)*abs(theta - theta_0), 1/p - 1)/p
-    a = [p*pow(1/sigma_2, p)*pow(abs(R - 1), p - 1), p*pow(1/sigma_1, p)*pow(1/sigma_1, p)*pow(abs(theta - theta_0), p - 1)]
-    b = np.concatenate((grad_R_gamma(x_bar), grad_theta_gamma(x_bar)), axis=0)
-    return scalar_term*np.matmul(a,b)
-
-def RL_bar(phi):
-    R = np.zeros(2,2)
-    R[0,0] = cos(phi)
-    R[0,1] = -l*sin(phi)
-    R[1,0] = sin(phi)
-    R[1,1] = l*cos(phi)
-    return R
-
-def g(X):
-    phi = X[2]
-    g_func = np.zeros(3,2)
-    g_func[0,0] = cos(phi)
-    g_func[0,1] = -l*sin(phi)
-    g_func[2,1] = sin(phi)
-    g_func[2,2] = -l*cos(phi)
-    g_func[3,1] = 0
-    g_func[3,2] = 1
-    return g_func
-
-def L_g_Upsilon(X):
-    x_bar = X[0:1]
-    return pow(alpha(X), (1-p)/p)*(pow(-omega(x_bar),p - 1)*grad_omega(x_bar)*RL_bar(X[2]) - psi(X[2])*[0, 1])
-
-def upsilon(X):
-    x_bar = X[0:1]
-    first_term = abs(kappa)
-    second_term = np.zeros(3)
-    second_term[0] = mu1*pow((R_gamma(x_bar) - c)/sigma_2,p)
-    second_term[1] = mu1*pow((theta_gamma(x_bar) - theta_0)/sigma_1,p)
-    second_term[2] = mu2*pow((abs(kappa)*(X[2] - phi_term))/sigma_3,p)
-    return first_term - pow(second_term.sum(),1/p)
-
-def grad_upsilon(X):
-    scalar_term = -pow(upsilon(X),-1)
-    x_bar = X[0:1]
-    phi = X[2]
-    R = R_gamma(x_bar)
-    theta = theta_gamma(x_bar)
-    a = [mu1*p*pow(((R - c)/sigma_2),p-1)/sigma_2, mu1*p*pow((theta - theta_0)/sigma_1,p -1)/sigma_1]
-    b = np.concatenate((grad_R_gamma(x_bar), grad_theta_gamma(x_bar)),axis=0)
-    angle_term = kappa*mu2*pow(kappa*(phi - phi_term)/sigma_3, p - 1)/sigma_3
-    return scalar_term*np.concatenate((np.matmul(a,b), angle_term), axis=1)
-
-
-def checkDonut(x, y, epsilon):
-    R = R_gamma([x, y])
-    theta = theta_gamma([x,y])
-
-    alpha = abs(R - c)/sigma_2
-    beta = abs(theta - theta_0)/sigma_1
-
-    Hg = abs(kappa) - np.linalg.norm([alpha, beta], p)
-    H_eps = np.linalg.norm([alpha, beta], p) - abs(kappa) - epsilon
-
-    if Hg >= 0 and H_eps >= 0:
-        d = 0
-    else:
-        d = 1
-    return d
-
-# may not be epsilon_1
-def min_norm_grad_omega():
-    theta_k = 2*pi/3
-    epsilon = epsilon_1
-    t_mu = (kappa + epsilon)/kappa
-    x_Lp = np.linspace(-t_mu*sigma_1, t_mu*sigma_1, 100)
-    y_Lp = np.linspace(-t_mu*sigma_2, t_mu*sigma_2, 100)
-    x, y = np.meshgrid(x_Lp, y_Lp, sparse=False, indexing='ij')
-    R_k = 1/abs(kappa)
-    alpha_b = np.sign(kappa)
-
-    Bx = np.multiply((R_k + y), np.cos(alpha_b*pi/2 + theta_k/2*x/sigma_1))
-    By = np.multiply((R_k + y), np.sin(alpha_b*pi/2 + theta_k/2*x/sigma_1)) - alpha_b*R_k
-
-    Dx = []
-    Dy = []
-    m = 1
-    for i in range(Bx.shape[0]):
-        for j in range(Bx.shape[0]):
-            donut = checkDonut(Bx(i,j), By(i,j), epsilon)
-            if donut == 1:
-                Dx.append(Bx(i,j))
-                Dy.append(By(i,j))
-                m += 1
-
-    D = np.concatenate((Dx.T, Dy.T), axis=1)
-    G = np.zeros(len(Dx), 2)
-    Norm_Grad = []
-    omega_vals = []
-    for i in range(len(Dx)):
-        x_new_B = kappa*Dx[i]
-        y_new_B = kappa*Dy[i]
-        R_B = sqrt(pow(x_new_B, 2) + np.power(y_new_B, 2))
-        theta_B = atan2(y_new_B, x_new_B)
-        Lp_weight_B_p_1 = pow(pow(R_B - c, p)/pow(sigma_2, p) + pow(theta_B - theta_0, p)/pow(sigma_1, p), 1/p - 1)
-
-        V_v = Lp_weight_B_p_1*p*[[pow(R_B - c, p - 1)/pow(sigma_2, p)], [-pow(theta_B - theta_0, p-1)/pow(sigma_1, p)]]
-        Q_inv = [[cos(theta_B), sin(theta_B)], [(1/R_B)*sin(theta_B), -(1/R_B)*cos(theta_B)]]
-        G[i, :] = np.matmul(V_v.T, Q_inv)
-        Norm_Grad.append(np.linalg.norm(G[i, :]))
-        omega_vals.append(omega([x_new_B, y_new_B]))
-
-    return min(Norm_Grad), min(omega_vals)
-
-# r here is actually r~
-def qp_contraint_rs(r):
-    ups = upsilon(r)
-    return -gamma*np.sign(ups)*pow(abs(ups), rho)
-
-
-def qp_constraint_ls(r):
-    return np.matmul(grad_upsilon(r), g(r))
-
-def x2r(X):
-    r = np.zeros(3)
-    r[0] = X[0] + l*cos(X[2])
-    r[1] = X[1] + l*sin(X[2])
-    r[2] = X[2]
-    return r
-
-def r2x(r):
-    X = np.zeros(3)
-    X[0] = r[0] - l*cos(r[2])
-    X[1] = r[1] - l*sin(r[2])
-    X[2] = r[2]
-    return X
-
-min_grad, min_omega = min_norm_grad_omega()
-
-mu_hat_max = delta*pow(sigma_3,p)/pow(2*pi, p)
-
-mu_star = min_grad*l*pow(sigma_3, p)*pow(min_omega, p - 1)/(pow(abs(kappa), p)*pow(2*pi, p - 1))
-
-class UnicycleDynamicsIntegrator:
     def __init__(self):
         self.x = np.zeros(3)
         self.u = np.zeros(2)
+
         rospy.init_node("unicycle_dynamics_integrator")
         self.input_pub = rospy.Publisher("inputs", Float32MultiArray, queue_size=1)
         self.states_sub = rospy.Subscriber("states", Float32MultiArray, self.states_callback, queue_size=1)
-        self.freq = 100
-        self.period = 1/self.freq
-        self.rate = rospy.Rate(self.freq)
+
         self.qp = osqp.OSQP()
         self.iteration = 0
         self.DeadLock = 0
         self.stage = 1
 
+        self.kappa = rospy.get_param("~kappa")
+        self.sigma_1 = rospy.get_param("~sigma_1")
+        self.sigma_2 = rospy.get_param("~sigma_2")
+        self.sigma_3 = rospy.get_param("~sigma_3")
+        self.p = rospy.get_param("~p")
+        self.c = rospy.get_param("~c")
+        self.l = rospy.get_param("~l")
+        self.theta_0 = rospy.get_param("~theta_0")
+        self.phi_term = rospy.get_param("~phi_term")
+        self.mu_1 = rospy.get_param("~mu_1")
+        self.mu_2 = rospy.get_param("~mu_2")
+        self.rho = rospy.get_param("~rho")
+        self.gamma = rospy.get_param("~gamma")
+        self.large = rospy.get_param("~large")
+        self.delta = rospy.get_param("~delta")
+        self.epsilon_1 = rospy.get_param("~epsilon_1")
+        self.epsilon_2 = rospy.get_param("~epsilon_2")
+
+        self.min_grad, self.min_omega = self.min_norm_grad_omega()
+        self.mu_hat_max = self.delta * pow(self.sigma_3, self.p) / pow(2 * pi, self.p)
+        self.mu_star = self.min_grad * self.l * pow(self.sigma_3, self.p) * pow(self.min_omega, self.p - 1) / \
+                       (pow(abs(self.kappa), self.p) * pow(2 * pi, self.p - 1))
+    def R_gamma(self, x_bar):
+        x = x_bar[0]
+        y = x_bar[1]
+        return sqrt(pow(self.kappa*x, 2) + pow(self.kappa*y + 1, 2))
+
+    def grad_R_gamma(self, x_bar):
+        divisor = sqrt(pow(self.kappa*x_bar[0], 2) + pow(self.kappa*x_bar[1] + 1, 2))
+        x_term = pow(self.kappa, 2)*x_bar[0]/divisor
+        y_term = 2*self.kappa*(self.kappa*x_bar[1] + 1)/divisor
+        return [x_term, y_term]
+
+    def theta_gamma(self, x_bar):
+        x = x_bar[0]
+        y = x_bar[1]
+        return atan2(self.kappa*y + 1, x)
+
+    def grad_theta_gamma(self, x_bar):
+        divisor = pow(self.kappa*x_bar[0],2) + pow(self.kappa*x_bar[1] + 1, 2)
+        x_term = -self.kappa*(self.kappa*x_bar[1] + 1)/divisor
+        y_term = pow(self.kappa,2)*x_bar[0]/divisor
+        return [x_term, y_term]
+
+    def alpha(self, X):
+        x_bar = X[0:2]
+        phi = X[2]
+        alpha_terms = np.zeros(3)
+        alpha_terms[0] = self.mu_1 * pow(((self.R_gamma(x_bar) - self.c) / self.sigma_2), self.p)
+        alpha_terms[1] = self.mu_1 * pow(((self.theta_gamma(x_bar) - self.theta_0) / self.sigma_1), self.p)
+        alpha_terms[2] = self.mu_2 * pow((abs(self.kappa) * (phi - self.phi_term) / self.sigma_3), self.p)
+        return alpha_terms.sum()
+
+    def psi(self, phi):
+        return self.mu_2 * self.kappa * pow(phi - self.phi_term, self.p - 1) / pow(self.sigma_3, self.p)
+
+    def omega(self, x_bar):
+        omega_terms = np.zeros(2)
+        omega_terms[0] = pow(abs(self.R_gamma(x_bar) - 1) / self.sigma_2, self.p)
+        omega_terms[1] = pow(abs(self.theta_gamma(x_bar) - self.theta_0) / self.sigma_1, self.p)
+        return pow(omega_terms.sum(), 1 / self.p)
+
+    def grad_omega(self, x_bar):
+        R = self.R_gamma(x_bar)
+        theta = self.theta_gamma(x_bar)
+        scalar_term = pow(pow(1 / self.sigma_2, self.p) * pow(abs(R - 1), self.p)
+                          + pow(1 / self.sigma_1, self.p) * abs(theta - self.theta_0), 1 / self.p - 1) / self.p
+        a = [self.p * pow(1 / self.sigma_2, self.p) * pow(abs(R - 1), self.p - 1),
+             self.p * pow(1 / self.sigma_1, self.p) * pow(1 / self.sigma_1,
+             self.p) * pow(abs(theta - self.theta_0), self.p - 1)]
+        b = np.hstack((self.grad_R_gamma(x_bar), self.grad_theta_gamma(x_bar)))
+        return scalar_term*np.matmul(a, b)
+
+    def RL_bar(self, phi):
+        R = np.zeros((2,2))
+        R[0,0] = cos(phi)
+        R[0,1] = -self.l * sin(phi)
+        R[1,0] = sin(phi)
+        R[1,1] = self.l * cos(phi)
+        return R
+
+    def g(self, X):
+        phi = X[2]
+        g_func = np.zeros((3,2))
+        g_func[0,0] = cos(phi)
+        g_func[0,1] = -self.l * sin(phi)
+        g_func[2,1] = sin(phi)
+        g_func[2,2] = -self.l * cos(phi)
+        g_func[3,1] = 0
+        g_func[3,2] = 1
+        return g_func
+
+    def L_g_Upsilon(self, X):
+        x_bar = X[0:2]
+        return pow(self.alpha(X), (1 - self.p) / self.p) \
+            * (pow(-self.omega(x_bar), self.p - 1) * self.grad_omega(x_bar)
+                * self.RL_bar(X[2]) - self.psi(X[2]) * [0, 1])
+
+    def upsilon(self, X):
+        x_bar = X[0:2]
+        first_term = abs(self.kappa)
+        second_term = np.zeros(3)
+        second_term[0] = self.mu_1 * pow((self.R_gamma(x_bar) - self.c) / self.sigma_2, self.p)
+        second_term[1] = self.mu_1 * pow((self.theta_gamma(x_bar) - self.theta_0) / self.sigma_1, self.p)
+        second_term[2] = self.mu_2 * pow((abs(self.kappa) * (X[2] - self.phi_term)) / self.sigma_3, self.p)
+        return first_term - pow(second_term.sum(), 1 / self.p)
+
+    def grad_upsilon(self, X):
+        scalar_term = -pow(self.upsilon(X), -1)
+        x_bar = X[0:2]
+        phi = X[2]
+        R = self.R_gamma(x_bar)
+        theta = self.theta_gamma(x_bar)
+        a = [self.mu_1 * self.p * pow(((R - self.c) / self.sigma_2), self.p - 1) / self.sigma_2,
+             self.mu_1 * self.p * pow((theta - self.theta_0) / self.sigma_1, self.p - 1) / self.sigma_1]
+        b = np.concatenate((self.grad_R_gamma(x_bar), self.grad_theta_gamma(x_bar)),axis=0)
+        angle_term = self.kappa * self.mu_2 * pow(self.kappa * (phi - self.phi_term) / self.sigma_3, self.p - 1) \
+                     / self.sigma_3
+        return scalar_term*np.concatenate((np.matmul(a,b), angle_term), axis=1)
+
+
+    def checkDonut(self, x, y, epsilon):
+        R = self.R_gamma([x, y])
+        theta = self.theta_gamma([x,y])
+
+        alpha = abs(R - self.c) / self.sigma_2
+        beta = abs(theta - self.theta_0) / self.sigma_1
+
+        Hg = abs(self.kappa) - np.linalg.norm([alpha, beta], self.p)
+        H_eps = np.linalg.norm([alpha, beta], self.p) - abs(self.kappa) - epsilon
+
+        if Hg >= 0 and H_eps >= 0:
+            d = 0
+        else:
+            d = 1
+        return d
+
+    # may not be epsilon_1
+    def min_norm_grad_omega(self):
+        theta_k = 2*pi/3
+        epsilon = self.epsilon_1
+        t_mu = (self.kappa + epsilon)/self.kappa
+        x_Lp = np.linspace(-t_mu*self.sigma_1, t_mu*self.sigma_1, 100)
+        y_Lp = np.linspace(-t_mu*self.sigma_2, t_mu*self.sigma_2, 100)
+        x, y = np.meshgrid(x_Lp, y_Lp, sparse=False, indexing='ij')
+        R_k = 1/abs(self.kappa)
+        alpha_b = np.sign(self.kappa)
+
+        Bx = np.multiply((R_k + y), np.cos(alpha_b*pi/2 + theta_k/2*x/self.sigma_1))
+        By = np.multiply((R_k + y), np.sin(alpha_b*pi/2 + theta_k/2*x/self.sigma_1)) - alpha_b*R_k
+
+        Dx = []
+        Dy = []
+        m = 1
+        for i in range(Bx.shape[0]):
+            for j in range(Bx.shape[0]):
+                donut = self.checkDonut(Bx[i,j], By[i,j], epsilon)
+                if donut == 1:
+                    Dx.append(Bx[i,j])
+                    Dy.append(By[i,j])
+                    m += 1
+
+        D = np.hstack((Dx, Dy))
+        G = np.zeros((len(Dx), 2))
+        Norm_Grad = []
+        omega_vals = []
+        for i in range(len(Dx)):
+            x_new_B = self.kappa*Dx[i]
+            y_new_B = self.kappa*Dy[i]
+            R_B = sqrt(pow(x_new_B, 2) + np.power(y_new_B, 2))
+            theta_B = atan2(y_new_B, x_new_B)
+            Lp_weight_B_p_1 = pow(pow(R_B - self.c, self.p) / pow(self.sigma_2, self.p)
+                                  + pow(theta_B - self.theta_0, self.p) / pow(self.sigma_1, self.p), 1 / self.p - 1)
+
+            V_v = Lp_weight_B_p_1 * self.p * np.asarray([[pow(R_B - self.c, self.p - 1) / pow(self.sigma_2, self.p)],
+                                            [-pow(theta_B - self.theta_0, self.p - 1) / pow(self.sigma_1, self.p)]])
+            Q_inv = [[cos(theta_B), sin(theta_B)], [(1/R_B)*sin(theta_B), -(1/R_B)*cos(theta_B)]]
+            G[i, :] = np.matmul(V_v.T, Q_inv)
+            Norm_Grad.append(np.linalg.norm(G[i, :]))
+            omega_vals.append(self.omega([x_new_B, y_new_B]))
+
+        return min(Norm_Grad), min(omega_vals)
+
+    # r here is actually r~
+    def qp_contraint_rs(self, r):
+        ups = self.upsilon(r)
+        return -self.gamma * np.sign(ups) * pow(abs(ups), self.rho)
+
+    def qp_constraint_ls(self, r):
+        return np.matmul(self.grad_upsilon(r), self.g(r))
+
+    def x2r(self, X):
+        r = np.zeros(3)
+        r[0] = X[0] + self.l * cos(X[2])
+        r[1] = X[1] + self.l * sin(X[2])
+        r[2] = X[2]
+        return r
+
+    def r2x(self, r):
+        X = np.zeros(3)
+        X[0] = r[0] - self.l * cos(r[2])
+        X[1] = r[1] - self.l * sin(r[2])
+        X[2] = r[2]
+        return X
+
     def states_callback(self, states_msg):
-        r = x2r(states_msg)
-        lie_derivative = L_g_Upsilon(r)
-        barrier_level = upsilon(r)
+        r = self.x2r(states_msg.data)
+        lie_derivative = self.L_g_Upsilon(r)
+        barrier_level = self.upsilon(r)
         self.algorithm_1(lie_derivative, barrier_level)
 
         if self.iteration == 0:
-            self.qp.setup(P=np.identity(2), A=qp_constraint_ls(r), q=np.zeros(2), l=qp_contraint_rs(r), u=np.inf, **settings)
+            self.qp.setup(P=np.identity(2),
+                          A=self.qp_constraint_ls(r),
+                          q=np.zeros(2),
+                          l=self.qp_contraint_rs(r),
+                          u=np.inf)
         else:
-            self.qp.update(q=np.zeros(2), l=qp_contraint_rs(r), u=np.inf)
+            self.qp.update(q=np.zeros(2),
+                           l=self.qp_contraint_rs(r),
+                           u=np.inf)
+        qp_results = self.qp.solve()
+        inputs_msg = Float32MultiArray()
+        inputs_msg.data = qp_results
+        self.input_pub.publish(inputs_msg)
 
     def algorithm_1(self, lie_derivative, barrier_level):
         if self.DeadLock == 1:
             if self.stage == 1:
                 if barrier_level < 0:
-                    mu1 = 1
+                    self.mu_1 = 1
                     # add callbacks for mu_star, mu_hat_max
-                    mu2 = min(mu_star, mu_hat_max)
+                    self.mu_2 = min(self.mu_star, self.mu_hat_max)
                 else:
-                    mu1 = 0
-                    mu2 = large
+                    self.mu_1 = 0
+                    self.mu_2 = self.large
                     self.stage = 2
             else:
                 if barrier_level < 0:
-                    mu1 = 0
-                    mu2 = large
+                    self.mu_1 = 0
+                    self.mu_2 = self.large
                 else:
-                    mu1 = 1
-                    mu2 = min(mu_star, mu_hat_max)
+                    self.mu_1 = 1
+                    self.mu_2 = min(self.mu_star, self.mu_hat_max)
                     self.stage = 1
         else:
-            mu1 = 1
-            mu2 = large
-            if np.linalg.norm(lie_derivative) < gamma:
+            self.mu_1 = 1
+            self.mu_2 = self.large
+            if np.linalg.norm(lie_derivative) < self.gamma:
                 self.DeadLock = 1
             else:
                 self.DeadLock = 0
 
-
     def loop(self):
         while not rospy.is_shutdown():
             rospy.spin()
-            self.integrate()
-            self.rate.sleep()

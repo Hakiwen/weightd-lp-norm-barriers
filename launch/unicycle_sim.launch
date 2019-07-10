@@ -8,6 +8,7 @@
 
     <node type="unicycle_dynamics_integrator" name="unicycle_dynamics_integrator" pkg="weighted_lp_norm_barriers"/>
 
-<!--    <node type="unicycle_controller" name="unicycle_controller" pkg="weighted_lp_norm_barriers" />-->
-
+    <node type="unicycle_controller" name="unicycle_controller"  pkg="weighted_lp_norm_barriers">
+	    <rosparam command="load" file="$(find weighted_lp_norm_barriers)/launch/test_params_unicycle_controller.yaml" />
+   </node>
 </launch>

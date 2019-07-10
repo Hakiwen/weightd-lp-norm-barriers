@@ -1,5 +1,5 @@
 #! /usr/bin/env python
-import unicycle_controller_
+import unicycle_controller
 
 
 uc = unicycle_controller.UnicycleController()

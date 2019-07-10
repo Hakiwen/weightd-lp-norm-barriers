@@ -17,15 +17,17 @@ class UnicycleDynamicsIntegrator:
         self.rate = rospy.Rate(self.freq)
 
     def inputs_callback(self, inputs_msg):
-        self.u = inputs_msg
+        self.u = inputs_msg.data
 
     def integrate(self):
         self.x[0] = self.u[0]*np.cos(self.x[2])*self.period + self.x[0]
         self.x[1] = self.u[0]*np.sin(self.x[2])*self.period + self.x[1]
         self.x[2] = self.u[1]*self.period + self.x[2]
-        self.states_pub(self.x)
+        state_msg = Float32MultiArray()
+        state_msg.data = self.x
+        self.states_pub.publish(state_msg)
 
     def loop(self):
         while not rospy.is_shutdown():
-            rospy.spin()
             self.integrate()
+            self.rate.sleep()

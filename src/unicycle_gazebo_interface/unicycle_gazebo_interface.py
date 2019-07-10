@@ -4,7 +4,7 @@ import tf
 from std_msgs.msg import Float32MultiArray
 from gazebo_msgs.msg import ModelState
 from nav_msgs.msg import Odometry
-from geometry_msgs.msg import Pose
+from geometry_msgs.msg import Pose, Twist, Quaternion
 
 class UnicycleGazeboInterface :
     def __init__(self):
@@ -13,7 +13,8 @@ class UnicycleGazeboInterface :
         self.sub = rospy.Subscriber("states", Float32MultiArray, self.states_callback, queue_size=1)
 
 
-    def states_callback(self, states):
+    def states_callback(self, states_msg):
+        states = states_msg.data
         model_state_msg = ModelState()
         model_state_msg.pose = Pose()
         model_state_msg.twist = Twist()
@@ -22,7 +23,7 @@ class UnicycleGazeboInterface :
         model_state_msg.pose.position.y = states[1]
         model_state_msg.pose.position.z = 0
 
-        mode_state_msg.pose.orientation = tf.createQuaternionMsgFromYaw(states[2])
+        model_state_msg.pose.orientation = Quaternion(*tf.transformations.quaternion_from_euler(0, 0, states[2]))
 
         model_state_msg.model_name = "unicycle"
         model_state_msg.reference_frame = "world"
