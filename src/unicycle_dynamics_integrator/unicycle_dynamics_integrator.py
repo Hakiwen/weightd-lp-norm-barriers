@@ -12,7 +12,7 @@ class UnicycleDynamicsIntegrator:
         rospy.init_node("unicycle_dynamics_integrator")
         self.input_sub = rospy.Subscriber("inputs", Float32MultiArray, self.inputs_callback, queue_size=1)
         self.states_pub = rospy.Publisher("states", Float32MultiArray, queue_size=1)
-        self.freq = 100
+        self.freq = 100.0
         self.period = 1/self.freq
         self.rate = rospy.Rate(self.freq)
 

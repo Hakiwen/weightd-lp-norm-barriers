@@ -1,6 +1,7 @@
 import rospy
 import osqp
 import numpy as np
+from scipy import sparse
 from math import pow, sqrt, cos, sin, atan2, pi
 
 from std_msgs.msg import Float32MultiArray
@@ -91,7 +92,7 @@ class UnicycleController:
         a = [self.p * pow(1 / self.sigma_2, self.p) * pow(abs(R - 1), self.p - 1),
              self.p * pow(1 / self.sigma_1, self.p) * pow(1 / self.sigma_1,
              self.p) * pow(abs(theta - self.theta_0), self.p - 1)]
-        b = np.hstack((self.grad_R_gamma(x_bar), self.grad_theta_gamma(x_bar)))
+        b = np.vstack((self.grad_R_gamma(x_bar), self.grad_theta_gamma(x_bar)))
         return scalar_term*np.matmul(a, b)
 
     def RL_bar(self, phi):
@@ -107,17 +108,17 @@ class UnicycleController:
         g_func = np.zeros((3,2))
         g_func[0,0] = cos(phi)
         g_func[0,1] = -self.l * sin(phi)
-        g_func[2,1] = sin(phi)
-        g_func[2,2] = -self.l * cos(phi)
-        g_func[3,1] = 0
-        g_func[3,2] = 1
+        g_func[1,0] = sin(phi)
+        g_func[1,1] = -self.l * cos(phi)
+        g_func[2,0] = 0
+        g_func[2,1] = 1
         return g_func
 
     def L_g_Upsilon(self, X):
         x_bar = X[0:2]
         return pow(self.alpha(X), (1 - self.p) / self.p) \
-            * (pow(-self.omega(x_bar), self.p - 1) * self.grad_omega(x_bar)
-                * self.RL_bar(X[2]) - self.psi(X[2]) * [0, 1])
+            * (pow(-self.omega(x_bar), self.p - 1) * np.matmul(self.grad_omega(x_bar), self.RL_bar(X[2]))
+               - self.psi(X[2]) * np.asarray([0, 1]))
 
     def upsilon(self, X):
         x_bar = X[0:2]
@@ -136,10 +137,10 @@ class UnicycleController:
         theta = self.theta_gamma(x_bar)
         a = [self.mu_1 * self.p * pow(((R - self.c) / self.sigma_2), self.p - 1) / self.sigma_2,
              self.mu_1 * self.p * pow((theta - self.theta_0) / self.sigma_1, self.p - 1) / self.sigma_1]
-        b = np.concatenate((self.grad_R_gamma(x_bar), self.grad_theta_gamma(x_bar)),axis=0)
+        b = np.vstack((self.grad_R_gamma(x_bar), self.grad_theta_gamma(x_bar)))
         angle_term = self.kappa * self.mu_2 * pow(self.kappa * (phi - self.phi_term) / self.sigma_3, self.p - 1) \
                      / self.sigma_3
-        return scalar_term*np.concatenate((np.matmul(a,b), angle_term), axis=1)
+        return scalar_term*np.hstack((np.matmul(a,b), angle_term))
 
 
     def checkDonut(self, x, y, epsilon):
@@ -210,6 +211,7 @@ class UnicycleController:
         return -self.gamma * np.sign(ups) * pow(abs(ups), self.rho)
 
     def qp_constraint_ls(self, r):
+        # print self.grad_upsilon(r)
         return np.matmul(self.grad_upsilon(r), self.g(r))
 
     def x2r(self, X):
@@ -228,26 +230,49 @@ class UnicycleController:
 
     def states_callback(self, states_msg):
         r = self.x2r(states_msg.data)
+        print r
         lie_derivative = self.L_g_Upsilon(r)
         barrier_level = self.upsilon(r)
         self.algorithm_1(lie_derivative, barrier_level)
 
+        # osqp needs np.ndarray for l, cannot construt from a scalar
+        P_qp = sparse.csc_matrix(np.identity(2))
+        A_qp = sparse.csc_matrix(np.vstack((self.qp_constraint_ls(r), [0, 0])))
+        l_qp = np.asarray([self.qp_contraint_rs(r),  -1])
+        u_qp = np.asarray([np.inf, np.inf])
+        # A_qp = sparse.csc_matrix(self.qp_constraint_ls(r))
+        # l_qp = np.asarray([self.qp_contraint_rs(r)])
+        # u_qp = np.inf
+        # print A_qp
+        # print l_qp
         if self.iteration == 0:
-            self.qp.setup(P=np.identity(2),
-                          A=self.qp_constraint_ls(r),
+            self.qp.setup(P=P_qp,
+                          A=A_qp,
                           q=np.zeros(2),
-                          l=self.qp_contraint_rs(r),
-                          u=np.inf)
+                          l=l_qp,
+                          u=u_qp,
+                          verbose=False)
         else:
             self.qp.update(q=np.zeros(2),
-                           l=self.qp_contraint_rs(r),
-                           u=np.inf)
+                           l=l_qp,
+                           u=u_qp)
+        self.iteration += 1
         qp_results = self.qp.solve()
+
+        print type(qp_results.x)
+        print l_qp
+        print qp_results.x
+        print self.qp_constraint_ls(r)
+        print np.matmul(self.qp_constraint_ls(r), qp_results.x)
+        print barrier_level
         inputs_msg = Float32MultiArray()
-        inputs_msg.data = qp_results
+        inputs_msg.data = qp_results.x
         self.input_pub.publish(inputs_msg)
 
     def algorithm_1(self, lie_derivative, barrier_level):
+        # print lie_derivative
+        # print barrier_level
+        # print self.DeadLock
         if self.DeadLock == 1:
             if self.stage == 1:
                 if barrier_level < 0:

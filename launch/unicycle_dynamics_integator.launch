@@ -1,0 +1,3 @@
+<launch>
+    <node type="unicycle_dynamics_integrator" name="unicycle_dynamics_integrator"  pkg="weighted_lp_norm_barriers" output="screen"/>
+</launch>
