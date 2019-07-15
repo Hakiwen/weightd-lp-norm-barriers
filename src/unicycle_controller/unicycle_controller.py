@@ -1,10 +1,15 @@
 import rospy
 import osqp
 import numpy as np
+import copy
+
 from scipy import sparse
 from math import pow, sqrt, cos, sin, atan2, pi
 
 from std_msgs.msg import Float32MultiArray
+from geometry_msgs.msg import Point
+from visualization_msgs.msg import MarkerArray, Marker
+
 
 
 class UnicycleController:
@@ -16,6 +21,7 @@ class UnicycleController:
         rospy.init_node("unicycle_dynamics_integrator")
         self.input_pub = rospy.Publisher("inputs", Float32MultiArray, queue_size=1)
         self.states_sub = rospy.Subscriber("states", Float32MultiArray, self.states_callback, queue_size=1)
+        self.barrier_field_pub = rospy.Publisher("barrier_field", MarkerArray, queue_size=1)
 
         self.qp = osqp.OSQP()
         self.iteration = 0
@@ -39,6 +45,8 @@ class UnicycleController:
         self.delta = rospy.get_param("~delta")
         self.epsilon_1 = rospy.get_param("~epsilon_1")
         self.epsilon_2 = rospy.get_param("~epsilon_2")
+        self.barrier_field_size = rospy.get_param("~barrier_field_size")
+        self.barrier_field_points = rospy.get_param("~barrier_field_points")
 
         self.min_grad, self.min_omega = self.min_norm_grad_omega()
         self.mu_hat_max = self.delta * pow(self.sigma_3, self.p) / pow(2 * pi, self.p)
@@ -268,6 +276,62 @@ class UnicycleController:
         inputs_msg = Float32MultiArray()
         inputs_msg.data = qp_results.x
         self.input_pub.publish(inputs_msg)
+
+        barrier_field_msg = MarkerArray()
+
+        marker_template = Marker()
+        marker_template.header.frame_id = "map"
+        marker_template.header.stamp = rospy.get_rostime()
+        marker_template.ns = "robot"
+        # marker_template.id = 0
+        # point
+        marker_template.type = 8
+        marker_template.action = 0
+        marker_template.pose.orientation.x = 0
+        marker_template.pose.orientation.y = 0
+        marker_template.pose.orientation.z = 0
+        marker_template.pose.orientation.w = 1.0
+        marker_template.scale.x = 1.0
+        marker_template.scale.y = 1.0
+        marker_template.scale.z = 1.0
+        marker_template.color.r = 0.0
+        marker_template.color.g = 0.0
+        marker_template.color.b = 0.0
+        marker_template.color.a = 1.0
+        marker_template.lifetime = rospy.Duration(1.0)
+
+
+        barrier_field = self.barrier_field(states_msg.data[0:2])
+        barrier_range = (np.amin(barrier_field), np.amax(barrier_field))
+
+        for i in range(barrier_field.shape[0]):
+            for j in range(barrier_field.shape[1]):
+                marker_ij = copy.deepcopy(marker_template)
+                if barrier_field[i,j] > 0:
+                    marker_ij.color.g = 1.0/barrier_range[1]*barrier_field[i,j]
+                elif barrier_field[i,j] < 0:
+                    marker_ij.color.r = 1.0/barrier_range[0]*barrier_field[i,j]
+                else:
+                    marker_ij.color.r = 1.0
+                    marker_ij.color.g = 1.0
+                    marker_ij.color.b = 1.0
+                marker_ij.pose.position.x = (float(i)/self.barrier_field_points - 0.5)*self.barrier_field_size + states_msg.data[0]
+                marker_ij.pose.position.y = (float(j)/self.barrier_field_points - 0.5)*self.barrier_field_size + states_msg.data[1]
+                marker_ij.pose.position.z = 0
+                barrier_field_msg.markers.append(marker_ij)
+        self.barrier_field_pub.publish(barrier_field_msg)
+
+    def barrier_field(self, x_bar):
+        x, y = np.meshgrid(np.linspace(x_bar[0] - self.barrier_field_size/2, x_bar[0] + self.barrier_field_size/2, self.barrier_field_points), np.linspace(x_bar[1] - self.barrier_field_size/2, x_bar[1] + self.barrier_field_size/2, self.barrier_field_points))
+        x_new = self.kappa*x
+        y_new = self.kappa*y + 1
+        R = np.power(np.power(x_new, 2) + np.power(y_new, 2), 1/2)
+        theta = np.arctan2(y_new, x_new)
+        alpha = np.absolute(R - self.c)/self.sigma_2
+        beta = np.absolute(theta - self.theta_0)/self.sigma_1
+        Hg = abs(self.kappa) - np.power(np.power(alpha, self.p) + np.power(beta, self.p), 1/self.p)
+        return Hg
+
 
     def algorithm_1(self, lie_derivative, barrier_level):
         # print lie_derivative

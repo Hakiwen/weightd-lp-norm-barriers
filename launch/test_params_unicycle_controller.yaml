@@ -16,3 +16,5 @@ delta: 10.0
 epsilon_1: 0.3
 epsilon_2: 0.3
 use_sim_time: false
+barrier_field_size: 4.0
+barrier_field_points: 10
