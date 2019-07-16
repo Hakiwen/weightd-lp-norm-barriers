@@ -90,13 +90,13 @@ class UnicycleController:
         omega_terms = np.zeros(2)
         omega_terms[0] = pow(abs(self.R_gamma(x_bar) - 1) / self.sigma_2, self.p)
         omega_terms[1] = pow(abs(self.theta_gamma(x_bar) - self.theta_0) / self.sigma_1, self.p)
-        return pow(omega_terms.sum(), 1 / self.p)
+        return pow(omega_terms.sum(), 1.0 / self.p)
 
     def grad_omega(self, x_bar):
         R = self.R_gamma(x_bar)
         theta = self.theta_gamma(x_bar)
         scalar_term = pow(pow(1 / self.sigma_2, self.p) * pow(abs(R - 1), self.p)
-                          + pow(1 / self.sigma_1, self.p) * abs(theta - self.theta_0), 1 / self.p - 1) / self.p
+                          + pow(1 / self.sigma_1, self.p) * abs(theta - self.theta_0), 1.0 / self.p - 1) / self.p
         a = [self.p * pow(1 / self.sigma_2, self.p) * pow(abs(R - 1), self.p - 1),
              self.p * pow(1 / self.sigma_1, self.p) * pow(1 / self.sigma_1,
              self.p) * pow(abs(theta - self.theta_0), self.p - 1)]
@@ -135,7 +135,7 @@ class UnicycleController:
         second_term[0] = self.mu_1 * pow((self.R_gamma(x_bar) - self.c) / self.sigma_2, self.p)
         second_term[1] = self.mu_1 * pow((self.theta_gamma(x_bar) - self.theta_0) / self.sigma_1, self.p)
         second_term[2] = self.mu_2 * pow((abs(self.kappa) * (X[2] - self.phi_term)) / self.sigma_3, self.p)
-        return first_term - pow(second_term.sum(), 1 / self.p)
+        return first_term - pow(second_term.sum(), 1.0 / self.p)
 
     def grad_upsilon(self, X):
         scalar_term = -pow(self.upsilon(X), -1)
@@ -175,7 +175,7 @@ class UnicycleController:
         x_Lp = np.linspace(-t_mu*self.sigma_1, t_mu*self.sigma_1, 100)
         y_Lp = np.linspace(-t_mu*self.sigma_2, t_mu*self.sigma_2, 100)
         x, y = np.meshgrid(x_Lp, y_Lp, sparse=False, indexing='ij')
-        R_k = 1/abs(self.kappa)
+        R_k = 1.0/abs(self.kappa)
         alpha_b = np.sign(self.kappa)
 
         Bx = np.multiply((R_k + y), np.cos(alpha_b*pi/2 + theta_k/2*x/self.sigma_1))
@@ -202,11 +202,11 @@ class UnicycleController:
             R_B = sqrt(pow(x_new_B, 2) + np.power(y_new_B, 2))
             theta_B = atan2(y_new_B, x_new_B)
             Lp_weight_B_p_1 = pow(pow(R_B - self.c, self.p) / pow(self.sigma_2, self.p)
-                                  + pow(theta_B - self.theta_0, self.p) / pow(self.sigma_1, self.p), 1 / self.p - 1)
+                                  + pow(theta_B - self.theta_0, self.p) / pow(self.sigma_1, self.p), 1.0 / self.p - 1)
 
             V_v = Lp_weight_B_p_1 * self.p * np.asarray([[pow(R_B - self.c, self.p - 1) / pow(self.sigma_2, self.p)],
                                             [-pow(theta_B - self.theta_0, self.p - 1) / pow(self.sigma_1, self.p)]])
-            Q_inv = [[cos(theta_B), sin(theta_B)], [(1/R_B)*sin(theta_B), -(1/R_B)*cos(theta_B)]]
+            Q_inv = [[cos(theta_B), sin(theta_B)], [(1.0/R_B)*sin(theta_B), -(1.0/R_B)*cos(theta_B)]]
             G[i, :] = np.matmul(V_v.T, Q_inv)
             Norm_Grad.append(np.linalg.norm(G[i, :]))
             omega_vals.append(self.omega([x_new_B, y_new_B]))
@@ -282,18 +282,18 @@ class UnicycleController:
         marker_template = Marker()
         marker_template.header.frame_id = "map"
         marker_template.header.stamp = rospy.get_rostime()
-        marker_template.ns = "robot"
+        marker_template.ns = rospy.get_namespace()
         # marker_template.id = 0
         # point
-        marker_template.type = 8
+        marker_template.type = 2
         marker_template.action = 0
         marker_template.pose.orientation.x = 0
         marker_template.pose.orientation.y = 0
         marker_template.pose.orientation.z = 0
         marker_template.pose.orientation.w = 1.0
-        marker_template.scale.x = 1.0
-        marker_template.scale.y = 1.0
-        marker_template.scale.z = 1.0
+        marker_template.scale.x = 0.1
+        marker_template.scale.y = 0.1
+        marker_template.scale.z = 0.1
         marker_template.color.r = 0.0
         marker_template.color.g = 0.0
         marker_template.color.b = 0.0
@@ -302,15 +302,16 @@ class UnicycleController:
 
 
         barrier_field = self.barrier_field(states_msg.data[0:2])
+        # print barrier_field
         barrier_range = (np.amin(barrier_field), np.amax(barrier_field))
 
         for i in range(barrier_field.shape[0]):
             for j in range(barrier_field.shape[1]):
                 marker_ij = copy.deepcopy(marker_template)
-                if barrier_field[i,j] > 0:
-                    marker_ij.color.g = 1.0/barrier_range[1]*barrier_field[i,j]
-                elif barrier_field[i,j] < 0:
-                    marker_ij.color.r = 1.0/barrier_range[0]*barrier_field[i,j]
+                if barrier_field[i, j] > 0:
+                    marker_ij.color.g = 1.0/barrier_range[1]*barrier_field[i, j]
+                elif barrier_field[i, j] < 0:
+                    marker_ij.color.r = 1.0/barrier_range[0]*barrier_field[i, j]
                 else:
                     marker_ij.color.r = 1.0
                     marker_ij.color.g = 1.0
@@ -318,6 +319,7 @@ class UnicycleController:
                 marker_ij.pose.position.x = (float(i)/self.barrier_field_points - 0.5)*self.barrier_field_size + states_msg.data[0]
                 marker_ij.pose.position.y = (float(j)/self.barrier_field_points - 0.5)*self.barrier_field_size + states_msg.data[1]
                 marker_ij.pose.position.z = 0
+                marker_ij.id = i*self.barrier_field_points + j
                 barrier_field_msg.markers.append(marker_ij)
         self.barrier_field_pub.publish(barrier_field_msg)
 
@@ -325,11 +327,14 @@ class UnicycleController:
         x, y = np.meshgrid(np.linspace(x_bar[0] - self.barrier_field_size/2, x_bar[0] + self.barrier_field_size/2, self.barrier_field_points), np.linspace(x_bar[1] - self.barrier_field_size/2, x_bar[1] + self.barrier_field_size/2, self.barrier_field_points))
         x_new = self.kappa*x
         y_new = self.kappa*y + 1
-        R = np.power(np.power(x_new, 2) + np.power(y_new, 2), 1/2)
+        # print np.power(x_new, 2) + np.power(y_new,2)
+        R = np.power(np.power(x_new, 2) + np.power(y_new, 2), 0.5)
+        # print R
         theta = np.arctan2(y_new, x_new)
+        # print theta
         alpha = np.absolute(R - self.c)/self.sigma_2
         beta = np.absolute(theta - self.theta_0)/self.sigma_1
-        Hg = abs(self.kappa) - np.power(np.power(alpha, self.p) + np.power(beta, self.p), 1/self.p)
+        Hg = abs(self.kappa) - np.power(np.power(alpha, self.p) + np.power(beta, self.p), 1.0/self.p)
         return Hg
 
 
