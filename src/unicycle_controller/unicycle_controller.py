@@ -52,6 +52,7 @@ class UnicycleController:
         self.mu_hat_max = self.delta * pow(self.sigma_3, self.p) / pow(2 * pi, self.p)
         self.mu_star = self.min_grad * self.l * pow(self.sigma_3, self.p) * pow(self.min_omega, self.p - 1) / \
                        (pow(abs(self.kappa), self.p) * pow(2 * pi, self.p - 1))
+
     def R_gamma(self, x_bar):
         x = x_bar[0]
         y = x_bar[1]
